@@ -161,7 +161,7 @@ public class SendTokenStore: ObservableObject {
             completion(success)
           }
         }
-      } else {
+      } else if token.isErc20 {
         self.transactionController.makeErc20TransferData(account.address, amount: "0x\(weiHexString)") { success, data in
           guard success else {
             completion(false)
