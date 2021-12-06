@@ -135,9 +135,120 @@ struct UnlockWalletView: View {
 #if DEBUG
 struct CryptoUnlockView_Previews: PreviewProvider {
   static var previews: some View {
-    UnlockWalletView(keyringStore: .previewStore)
-      .previewLayout(.sizeThatFits)
-      .previewColorSchemes()
+//    UnlockWalletView(keyringStore: .previewStore)
+//      .previewLayout(.sizeThatFits)
+//      .previewColorSchemes()
+    UnlockWalletView2(
+      store: .init(
+        initialState: .init(),
+        reducer: unlockReducer,
+        environment: .init(
+          keyringController: TestKeyringController(),
+          walletKeychain: .init(
+            savePassword: { _ in return .success(()) },
+            loadPassword: { .success("password") },
+            isPasswordSaved: { false }
+          )
+        )
+      )
+    )
   }
 }
 #endif
+
+import ComposableArchitecture
+
+public struct UnlockWalletView2: View {
+  var store: Store<UnlockState, UnlockAction>
+  @ObservedObject var viewStore: ViewStore<UnlockState, UnlockAction>
+  
+  init(store: Store<UnlockState, UnlockAction>) {
+    self.store = store
+    self.viewStore = ViewStore(store)
+  }
+  
+  private var biometricsIcon: Image? {
+    let context = LAContext()
+    if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) {
+      switch context.biometryType {
+      case .faceID:
+        return Image(systemName: "faceid")
+      case .touchID:
+        return Image(systemName: "touchid")
+      case .none:
+        return nil
+      @unknown default:
+        return nil
+      }
+    }
+    return nil
+  }
+  
+  private func unlock() {
+    viewStore.send(.unlockTapped)
+  }
+  
+  public var body: some View {
+    ScrollView(.vertical) {
+      VStack(spacing: 46) {
+        Image("graphic-lock")
+          .padding(.bottom)
+          .accessibilityHidden(true)
+        VStack {
+          Text(Strings.Wallet.unlockWalletTitle)
+            .font(.headline)
+            .padding(.bottom)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+          HStack {
+            SecureField(Strings.Wallet.passwordPlaceholder, text: viewStore.binding(\.$password), onCommit: unlock)
+              .textContentType(.password)
+              .font(.subheadline)
+              .introspectTextField(customize: { tf in
+                tf.becomeFirstResponder()
+              })
+              .textFieldStyle(BraveValidatedTextFieldStyle(error: viewStore.unlockError))
+            if viewStore.state.isPasswordSaved, let icon = biometricsIcon {
+              Button(action: {
+                viewStore.send(.fillPasswordFromKeychain)
+              }) {
+                icon
+                  .imageScale(.large)
+                  .font(.headline)
+              }
+            }
+          }
+          .padding(.horizontal, 48)
+        }
+        VStack(spacing: 30) {
+          Button(action: unlock) {
+            Text(Strings.Wallet.unlockWalletButtonTitle)
+          }
+          .buttonStyle(BraveFilledButtonStyle(size: .normal))
+          .disabled(viewStore.isUnlockButtonDisabled)
+          NavigationLink(
+            isActive: viewStore.binding(
+              get: { $0.restore != nil },
+              send: { $0 ? .restoreTapped : .restoreDismissed }),
+            destination: {
+              Text("Test")
+            }, label: {
+              Text(Strings.Wallet.restoreWalletButtonTitle)
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(Color(.braveLabel))
+            }
+          )
+        }
+      }
+      .frame(maxHeight: .infinity, alignment: .top)
+      .padding()
+      .padding(.vertical)
+    }
+    .navigationTitle(Strings.Wallet.cryptoTitle)
+    .navigationBarTitleDisplayMode(.inline)
+    .background(Color(.braveBackground).edgesIgnoringSafeArea(.all))
+    .onAppear {
+      viewStore.send(.onAppear)
+    }
+  }
+}
